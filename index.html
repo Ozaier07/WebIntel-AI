@@ -1,0 +1,70 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WebIntel AI</title>
+<style>
+:root{--bg:#0e1a2b;--card:#1b2e48;--teal:#22bfae;--cy:#6ad4d9;--amb:#f4b84a;--tx:#f4f7fb;--mu:#9fb2c8;--red:#e87d7d}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,Segoe UI,sans-serif;background:var(--bg);color:var(--tx)}
+header{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:14px 24px;border-bottom:1px solid #243a58}
+.logo{font-weight:800;font-size:20px}.logo b{color:var(--teal)}nav{display:flex;gap:6px;margin-left:auto}
+nav button{background:none;border:0;color:var(--mu);padding:8px 14px;border-radius:8px;cursor:pointer;font-size:14px}
+nav button.on{background:var(--card);color:var(--teal)}main{max-width:1050px;margin:0 auto;padding:24px}
+.card{background:var(--card);border-radius:18px;padding:20px;margin-bottom:16px}
+h2{margin:0 0 4px;font-size:26px}h3{margin:0 0 10px;color:var(--cy)}p.s{color:var(--mu);margin:0 0 18px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+.stat b{display:block;font-size:34px;color:var(--teal)}.stat span{color:var(--mu);font-size:13px}
+input[type=text]{width:100%;padding:10px 12px;margin:4px 0 12px;border-radius:10px;border:1px solid #2d4a70;background:#0e1a2b;color:var(--tx)}
+label.ck{display:inline-block;margin:0 14px 8px 0;color:var(--mu);font-size:14px}
+.btn{background:var(--teal);color:#06231f;border:0;padding:9px 16px;border-radius:10px;font-weight:700;cursor:pointer}
+.btn.alt{background:#2d4a70;color:var(--tx)}table{width:100%;border-collapse:collapse;font-size:14px}
+td,th{padding:8px;border-bottom:1px solid #243a58;text-align:left;vertical-align:top;word-break:break-word}
+.tag{display:inline-block;background:#0e1a2b;color:var(--cy);border-radius:6px;padding:2px 8px;margin:2px;font-size:12px}
+.ok{color:var(--teal)}.bad{color:var(--red)}.wrap{overflow-x:auto;max-height:340px}
+.steps{display:flex;gap:10px;flex-wrap:wrap}.steps div{flex:1;min-width:150px;background:#0e1a2b;border-radius:14px;padding:14px}
+.steps em{color:var(--teal);font-style:normal;font-weight:700}li{margin-bottom:6px;color:var(--mu)}
+.hide{display:none}
+</style></head><body>
+<header><div class="logo">WebIntel <b>AI</b></div>
+<nav><button class="on" data-t="dash">Dashboard</button><button data-t="proj">Projects</button><button data-t="res">Results</button><button data-t="about">About</button></nav></header>
+<main>
+<div id="offline" class="card hide" style="border:1px solid #e87d7d">Backend not reachable. Start it with <b>python -m uvicorn main:app --reload</b> and open <b>http://127.0.0.1:8000</b> (the backend must be running for this page to work).</div>
+<section id="dash"><h2>Dashboard</h2><p class="s">Extract data. Understand insights. Automate intelligence.</p>
+<div class="grid" id="stats"></div>
+<div class="card" style="margin-top:16px"><h3>Recent jobs</h3><div class="wrap"><table id="jobs"></table></div></div></section>
+
+<section id="proj" class="hide"><h2>Projects</h2><p class="s">Step 1 - configure a URL and the fields to extract.</p>
+<div class="card"><label>Project name</label><input type="text" id="name" placeholder="e.g. Python docs scan">
+<label>Website URL (public pages only)</label><input type="text" id="url" placeholder="https://example.com">
+<div><label class="ck"><input type="checkbox" value="title" checked> Title</label><label class="ck"><input type="checkbox" value="headings" checked> Headings</label><label class="ck"><input type="checkbox" value="paragraphs" checked> Paragraphs</label><label class="ck"><input type="checkbox" value="links"> Links</label><label class="ck"><input type="checkbox" value="meta"> Metadata</label></div>
+<label>Custom CSS selector (optional)</label><input type="text" id="css" placeholder="e.g. div.price">
+<button class="btn" onclick="create()">Create project</button> <button class="btn alt" onclick="useSample()">Use built-in sample page</button> <span id="msg"></span></div>
+<div class="card"><h3>Your projects</h3><div class="wrap"><table id="plist"></table></div></div></section>
+
+<section id="res" class="hide"><h2>Results</h2><p class="s">Steps 3-5 - cleaned records, AI-assisted analysis and export.</p><div id="rbody" class="card">Run a project to see results here.</div></section>
+
+<section id="about" class="hide"><h2>About WebIntel AI</h2><p class="s">AI-Powered Web Scraper &amp; Intelligent Data Analytics Platform - Department of CSE, IET Lucknow, 2026-27</p>
+<div class="card"><h3>Problem</h3><p class="s" style="margin:0">Useful information is spread across many sites. Manual collection is slow and inconsistent, and basic scrapers collect text without explaining it. WebIntel AI joins extraction, cleaning, AI analysis, history and export in one workspace.</p></div>
+<div class="card"><h3>Workflow</h3><div class="steps"><div><em>01 Configure</em><br>Enter URL, choose fields</div><div><em>02 Validate &amp; fetch</em><br>SSRF check, robots.txt, timeouts</div><div><em>03 Parse &amp; clean</em><br>Extract, normalise, deduplicate</div><div><em>04 AI analysis</em><br>Summary, keywords, category</div><div><em>05 Save &amp; export</em><br>History, CSV / JSON</div></div></div>
+<div class="grid"><div class="card"><h3>Technology</h3><ul><li>Frontend: HTML, CSS, JavaScript</li><li>Backend: Python, FastAPI</li><li>Scraping: Requests, BeautifulSoup</li><li>Data: SQLite, Pandas</li></ul></div>
+<div class="card"><h3>Security &amp; responsible scraping</h3><ul><li>SSRF protection, redirects re-checked</li><li>robots.txt respected</li><li>Timeouts and size limits</li><li>No bypassing logins, CAPTCHAs or paywalls</li></ul></div>
+<div class="card"><h3>Roadmap</h3><ul><li>Done: foundation, scraping, analysis, history, export</li><li>Next: Anakin AI API, scheduling, change detection, analytics charts</li></ul></div></div>
+<div class="card"><h3>Team</h3>Ozaier Ahmad - Pankaj Chaudhary - Radhika Mittal</div></section>
+</main>
+<script>
+const B=location.protocol==='file:'?'http://127.0.0.1:8000':'',$=id=>document.getElementById(id),api=(u,o)=>fetch(B+u,o).then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.detail||'Request failed');return d});
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function show(t){document.querySelectorAll('main section').forEach(s=>s.classList.toggle('hide',s.id!==t));document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));if(t==='dash')loadDash();if(t==='proj')loadProj()}
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>show(b.dataset.t));
+async function loadDash(){const j=await api('/api/jobs'),p=await api('/api/projects'),ok=j.filter(x=>x.status==='done');
+$('stats').innerHTML=[[p.length,'Projects'],[j.length,'Total jobs'],[ok.length?Math.round(ok.length/j.length*100)+'%':'-','Success rate'],[ok.reduce((a,x)=>a+x.count,0),'Records extracted']].map(([v,l])=>`<div class="card stat"><b>${v}</b><span>${l}</span></div>`).join('');
+$('jobs').innerHTML='<tr><th>#</th><th>Project</th><th>Status</th><th>Records</th><th>Time</th><th></th></tr>'+j.map(x=>`<tr><td>${x.id}</td><td>${esc(x.name)}</td><td class="${x.status==='done'?'ok':'bad'}">${x.status}${x.error?' - '+esc(x.error):''}</td><td>${x.count}</td><td>${(x.secs||0).toFixed(1)}s</td><td><button class="btn alt" onclick="view(${x.id})">View</button></td></tr>`).join('')}
+async function loadProj(){const p=await api('/api/projects');$('plist').innerHTML='<tr><th>Name</th><th>URL</th><th>Fields</th><th>Runs</th><th></th></tr>'+p.map(x=>`<tr><td>${esc(x.name)}</td><td>${esc(x.url)}</td><td>${JSON.parse(x.fields).map(f=>`<span class="tag">${esc(f)}</span>`).join('')}</td><td>${x.runs}</td><td><button class="btn" onclick="runp(${x.id},this)">Run</button></td></tr>`).join('')}
+async function create(){const f=[...document.querySelectorAll('#proj input[type=checkbox]:checked')].map(c=>c.value);if($('css').value.trim())f.push('css:'+$('css').value.trim());
+try{await api('/api/projects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:$('name').value||'Untitled',url:$('url').value.trim(),fields:f})});$('msg').textContent='Created.';loadProj()}catch(e){$('msg').textContent=e.message}}
+async function runp(id,b){b.textContent='Running...';b.disabled=true;try{const r=await api(`/api/projects/${id}/run`,{method:'POST'});view(r.job_id)}finally{b.disabled=false;b.textContent='Run'}}
+async function view(id){const d=await api('/api/jobs/'+id);show('res');const j=d.job,a=d.analysis;
+$('rbody').innerHTML=`<h3>Job #${j.id} - <span class="${j.status==='done'?'ok':'bad'}">${j.status}</span> - ${j.count} records - ${(j.secs||0).toFixed(1)}s</h3>`+(j.error?`<p class="bad">${esc(j.error)}</p>`:'')+
+(a?`<div class="card" style="background:#0e1a2b"><h3>AI-assisted analysis</h3><p>${esc(a.summary)}</p><p>Category: <b class="ok">${esc(a.category)}</b></p>${JSON.parse(a.keywords).map(k=>`<span class="tag">${esc(k)}</span>`).join('')}</div>`:'')+
+(j.status==='done'?`<a class="btn" href="${B}/api/jobs/${id}/export?fmt=csv">Export CSV</a> <a class="btn alt" href="${B}/api/jobs/${id}/export?fmt=json">Export JSON</a><div class="wrap" style="margin-top:12px"><table><tr><th>Field</th><th>Value</th></tr>${d.records.map(r=>`<tr><td><span class="tag">${esc(r.field)}</span></td><td>${esc(r.value)}</td></tr>`).join('')}</table></div>`:'')}
+function useSample(){$('url').value='sample';$('msg').textContent='Sample selected - click Create project.'}
+api('/api/projects').catch(()=>$('offline').classList.remove('hide'));
+loadDash();
+</script></body></html>
