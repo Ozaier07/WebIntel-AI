@@ -1,0 +1,9 @@
+{
+  "postAttachCommand": "python -m uvicorn main:app --reload",
+  "portsAttributes": {
+    "8000": {
+      "label": "WebIntel AI",
+      "onAutoForward": "openBrowser"
+    }
+  }
+}
