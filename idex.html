@@ -1,0 +1,284 @@
+"""
+WebIntel AI - single-file app (FastAPI backend + web interface together).
+Run:  python webintel_app.py     (needs Python 3.10+)
+It installs missing packages automatically, starts the server and opens your browser.
+"""
+import importlib.util, subprocess, sys
+_need = {"fastapi": "fastapi", "uvicorn": "uvicorn", "requests": "requests", "bs4": "beautifulsoup4", "pandas": "pandas"}
+_missing = [p for mod, p in _need.items() if importlib.util.find_spec(mod) is None]
+if _missing:
+    print("Installing:", ", ".join(_missing))
+    subprocess.check_call([sys.executable, "-m", "pip", "install", *_missing])
+
+from pathlib import Path
+import io, ipaddress, json, re, socket, sqlite3, time
+from collections import Counter
+from urllib.parse import urljoin, urlparse
+from urllib import robotparser
+import pandas as pd, requests
+from bs4 import BeautifulSoup
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, Response
+from pydantic import BaseModel
+
+HERE = Path(__file__).parent
+DB = str(HERE / "webintel.db")
+UA = "Mozilla/5.0 (compatible; WebIntelAI-StudentProject/1.0)"
+SAMPLE_URL = "sample"
+SAMPLE_HTML = """<html><head><title>Intro to Cloud Computing - Course Page</title><meta name="description" content="A beginner course on cloud computing"></head><body><h1>Introduction to Cloud Computing</h1><h2>Course overview</h2><p>This course introduces students to cloud computing, covering software services, data storage, and web application deployment on modern cloud platforms.</p><p>Students learn how a distributed system handles data at scale, and how an API connects cloud services to every web application.</p><h2>Syllabus</h2><p>Topics include virtual machines, containers, cloud databases, security, and cost management for software teams.</p><a href="/week1">Week 1 notes</a><a href="https://example.org/lab">Lab guide</a><p class="price">Fee: Rs. 4,999</p></body></html>"""
+app = FastAPI(title="WebIntel AI")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])  # lets the HTML file work when opened directly
+
+def db():
+    c = sqlite3.connect(DB); c.row_factory = sqlite3.Row; return c
+
+with db() as c:
+    c.executescript("""
+    create table if not exists projects(id integer primary key, name text, url text, fields text, created text default current_timestamp);
+    create table if not exists jobs(id integer primary key, project_id int, status text, error text, secs real, count int default 0, created text default current_timestamp);
+    create table if not exists records(id integer primary key, job_id int, field text, value text);
+    create table if not exists analyses(job_id int primary key, summary text, keywords text, category text);""")
+
+# ---- Stage 2: validate & fetch (SSRF protection, robots.txt, timeouts) ----
+def check_url(u):
+    p = urlparse(u)
+    if p.scheme not in ("http", "https") or not p.hostname:
+        raise ValueError("Only http/https URLs are allowed")
+    for info in socket.getaddrinfo(p.hostname, p.port or 80):
+        ip = ipaddress.ip_address(info[4][0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+            raise ValueError("Blocked: private/restricted address (SSRF protection)")
+
+def robots_ok(u):
+    p = urlparse(u); rp = robotparser.RobotFileParser()
+    try:
+        r = requests.get(f"{p.scheme}://{p.netloc}/robots.txt", timeout=5, headers={"User-Agent": UA})
+        if r.status_code != 200: return True
+        rp.parse(r.text.splitlines())
+        return rp.can_fetch(UA, u)
+    except requests.RequestException:
+        return True
+
+def fetch(u):
+    try:
+        for _ in range(4):  # redirects are re-validated every hop
+            check_url(u)
+            r = requests.get(u, timeout=15, headers={"User-Agent": UA, "Accept": "text/html,*/*"}, allow_redirects=False, stream=True)
+            if r.is_redirect:
+                u = urljoin(u, r.headers["Location"]); continue
+            if r.status_code in (401, 403, 429):
+                raise ValueError(f"The site refused the request (HTTP {r.status_code}). It may block automated access - try another page.")
+            r.raise_for_status()
+            data = b""
+            for chunk in r.iter_content(65536):
+                data += chunk
+                if len(data) > 2_000_000: break
+            return u, data.decode(r.encoding or r.apparent_encoding or "utf-8", "ignore")
+        raise ValueError("Too many redirects")
+    except requests.exceptions.SSLError:
+        raise ValueError("SSL certificate error while connecting to the site")
+    except requests.exceptions.Timeout:
+        raise ValueError("The site took too long to respond (timeout)")
+    except requests.exceptions.ConnectionError:
+        raise ValueError("Could not connect - check the URL and your internet connection")
+    except requests.exceptions.HTTPError as e:
+        raise ValueError(f"The site returned an error: {e.response.status_code}")
+    except socket.gaierror:
+        raise ValueError("Domain name not found - check the URL")
+
+# ---- Stage 3: parse & clean ----
+def extract(html, base, fields):
+    s, out = BeautifulSoup(html, "html.parser"), []
+    for f in fields:
+        if f == "title": v = [s.title.get_text()] if s.title else []
+        elif f == "headings": v = [h.get_text(" ") for h in s.find_all(["h1", "h2", "h3"])]
+        elif f == "paragraphs": v = [p.get_text(" ") for p in s.find_all("p")]
+        elif f == "links": v = [urljoin(base, a["href"]) for a in s.find_all("a", href=True)]
+        elif f == "meta":
+            v = [f'{m.get("name") or m.get("property")}: {m["content"]}' for m in s.find_all("meta", content=True) if m.get("name") or m.get("property")]
+        elif f.startswith("css:"): v = [e.get_text(" ") for e in s.select(f[4:])]
+        else: continue
+        out += [(f, x) for x in v]
+    df = pd.DataFrame(out, columns=["field", "value"])
+    df["value"] = df["value"].astype(str).str.replace(r"\s+", " ", regex=True).str.strip()
+    return df[df["value"].str.len() > 1].drop_duplicates().reset_index(drop=True)
+
+# ---- Stage 4: analysis (local, offline). Swap in the Anakin AI call here once its API is verified. ----
+STOP = set("the and for are was with that this from your you our not have has will can they their about more also been were which into than then".split())
+CATS = {"Technology": "software data code system web api cloud", "Business": "market price company customer sales product", "Education": "course student learn university research study", "News": "said report government people year news"}
+
+def analyse(texts):
+    t = " ".join(texts)[:20000]
+    words = [w for w in re.findall(r"[a-z]{4,}", t.lower()) if w not in STOP]
+    freq = Counter(words)
+    sents = [s for s in re.split(r"(?<=[.!?])\s+", t) if 40 < len(s) < 300]
+    sc = lambda s: sum(freq[w] for w in re.findall(r"[a-z]{4,}", s.lower())) / len(s) ** .5
+    summary = " ".join(sorted(sents, key=sc, reverse=True)[:3]) or "Not enough text to summarise."
+    cat = max(CATS, key=lambda k: sum(freq[w] for w in CATS[k].split()))
+    return summary, [w for w, _ in freq.most_common(8)], cat if freq else "Unknown"
+
+# ---- API ----
+class ProjectIn(BaseModel):
+    name: str
+    url: str
+    fields: list[str]
+
+@app.post("/api/projects")
+def create_project(p: ProjectIn):
+    if p.url != SAMPLE_URL:
+        try: check_url(p.url)
+        except socket.gaierror: raise HTTPException(400, "Domain name not found - check the URL")
+        except Exception as e: raise HTTPException(400, str(e))
+    with db() as c:
+        cur = c.execute("insert into projects(name,url,fields) values(?,?,?)", (p.name, p.url, json.dumps(p.fields)))
+        return {"id": cur.lastrowid}
+
+@app.get("/api/projects")
+def projects():
+    with db() as c:
+        return [dict(r) for r in c.execute("select p.*, (select count(*) from jobs j where j.project_id=p.id) runs from projects p order by id desc")]
+
+@app.post("/api/projects/{pid}/run")
+def run(pid: int):
+    with db() as c:
+        p = c.execute("select * from projects where id=?", (pid,)).fetchone()
+        if not p: raise HTTPException(404, "Project not found")
+        jid = c.execute("insert into jobs(project_id,status) values(?,'running')", (pid,)).lastrowid
+    t0, err, df = time.time(), None, None
+    try:
+        if p["url"] == SAMPLE_URL:
+            final, html = "https://sample.local/", SAMPLE_HTML
+        else:
+            if not robots_ok(p["url"]): raise ValueError("Blocked by robots.txt - scraping not permitted for this page")
+            final, html = fetch(p["url"])
+        df = extract(html, final, json.loads(p["fields"]))
+    except Exception as e:
+        err = str(e) or e.__class__.__name__
+    with db() as c:
+        if err:
+            c.execute("update jobs set status='failed',error=?,secs=? where id=?", (err, time.time() - t0, jid))
+        else:
+            c.executemany("insert into records(job_id,field,value) values(?,?,?)", [(jid, r.field, r.value) for r in df.itertuples()])
+            s, k, cat = analyse(df[df.field.isin(["paragraphs", "headings"])]["value"].tolist() or df["value"].tolist())
+            c.execute("insert into analyses values(?,?,?,?)", (jid, s, json.dumps(k), cat))
+            c.execute("update jobs set status='done',secs=?,count=? where id=?", (time.time() - t0, len(df), jid))
+    return {"job_id": jid}
+
+@app.get("/api/jobs/{jid}")
+def job(jid: int):
+    with db() as c:
+        j = c.execute("select * from jobs where id=?", (jid,)).fetchone()
+        if not j: raise HTTPException(404, "Job not found")
+        a = c.execute("select * from analyses where job_id=?", (jid,)).fetchone()
+        recs = [dict(r) for r in c.execute("select field,value from records where job_id=? limit 500", (jid,))]
+    return {"job": dict(j), "records": recs, "analysis": dict(a) if a else None}
+
+@app.get("/api/jobs/{jid}/export")
+def export(jid: int, fmt: str = "csv"):
+    with db() as c:
+        df = pd.read_sql("select field,value from records where job_id=?", c, params=(jid,))
+    if fmt == "json":
+        return Response(df.to_json(orient="records"), media_type="application/json", headers={"Content-Disposition": f"attachment; filename=job{jid}.json"})
+    return Response(df.to_csv(index=False), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=job{jid}.csv"})
+
+@app.get("/api/jobs")
+def jobs():
+    with db() as c:
+        return [dict(r) for r in c.execute("select j.*, p.name from jobs j join projects p on p.id=j.project_id order by j.id desc limit 50")]
+
+@app.get("/", response_class=HTMLResponse)
+def home():
+    return INDEX_HTML
+
+if __name__ == "__main__":
+    import threading, webbrowser, uvicorn
+    print("\nWebIntel AI running at http://127.0.0.1:8000  (press Ctrl+C to stop)\n")
+    threading.Timer(1.5, lambda: webbrowser.open("http://127.0.0.1:8000")).start()
+    uvicorn.run(app, host="127.0.0.1", port=8000)
+
+
+# ---- Web interface (served at /) ----
+INDEX_HTML = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WebIntel AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Bitter:wght@600;700&family=IBM+Plex+Mono&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f5f1e8;--bg2:#ece6d8;--card:#fffdf8;--teal:#2f5d50;--cy:#7a4a2b;--tx:#211f1b;--mu:#6d665a;--red:#b0432a;--line:#d8d0bf}
+*{box-sizing:border-box}body{margin:0;font-family:"Source Sans 3","Segoe UI",system-ui,sans-serif;font-size:16px;background:var(--bg);color:var(--tx);line-height:1.5}
+header{display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;padding:18px 32px 0;border-bottom:2px solid var(--tx);background:var(--bg)}
+.logo{font-family:"Bitter","Bitter",Georgia,serif;font-weight:700;font-size:26px;letter-spacing:-.5px;padding-bottom:10px}.logo b{color:var(--teal);font-style:italic}
+nav{display:flex;gap:2px;margin-left:auto;flex-wrap:wrap}
+nav button{background:none;border:0;border-bottom:3px solid transparent;color:var(--mu);padding:10px 14px;cursor:pointer;font-size:14px;font-family:inherit;margin-bottom:-2px}
+nav button:hover{color:var(--tx)}nav button.on{color:var(--tx);border-bottom-color:var(--teal);font-weight:600}
+main{max-width:1000px;margin:0 auto;padding:32px 24px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:22px;margin-bottom:18px}
+h2{margin:0 0 6px;font-family:"Bitter","Bitter",Georgia,serif;font-size:32px;font-weight:700;letter-spacing:-.5px}
+h3{margin:0 0 12px;font-family:"Bitter","Bitter",Georgia,serif;font-size:18px;color:var(--tx);border-bottom:1px solid var(--line);padding-bottom:8px}
+p.s{color:var(--mu);margin:0 0 22px;font-size:15px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px}
+.stat{border-top:3px solid var(--teal)}.stat b{display:block;font-family:"Bitter","Bitter",Georgia,serif;font-size:38px;font-weight:700;color:var(--tx)}.stat span{color:var(--mu);font-size:12px;text-transform:uppercase;letter-spacing:.08em}
+label{font-size:13px;font-weight:600;color:var(--tx)}
+input[type=text],textarea,select{width:100%;padding:10px 12px;margin:5px 0 14px;border-radius:3px;border:1px solid #bdb4a1;background:#fff;color:var(--tx);font:inherit}
+input:focus,textarea:focus,select:focus{outline:2px solid var(--teal);outline-offset:-1px}
+textarea{min-height:90px;font-family:"IBM Plex Mono",Consolas,monospace;font-size:12px}
+label.ck{display:inline-block;margin:0 16px 8px 0;color:var(--tx);font-size:14px;font-weight:400}
+.btn{background:var(--teal);color:#fff;border:1px solid var(--teal);padding:9px 18px;border-radius:3px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block;font-size:14px;font-family:inherit}
+.btn:hover{background:#244a40}.btn.alt{background:transparent;color:var(--tx);border-color:#9c937f}.btn.alt:hover{background:var(--bg2)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--mu);font-weight:600}
+td,th{padding:9px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;word-break:break-word}
+.tag{display:inline-block;border:1px solid #b9ae98;color:var(--cy);border-radius:2px;padding:1px 7px;margin:2px;font-size:12px;font-family:"IBM Plex Mono",Consolas,monospace;background:#fff}
+.ok{color:var(--teal);font-weight:600}.bad{color:var(--red);font-weight:600}.wrap{overflow-x:auto;max-height:340px}
+.steps{display:flex;gap:0;flex-wrap:wrap;border:1px solid var(--line)}.steps div{flex:1;min-width:150px;padding:14px;border-right:1px solid var(--line);font-size:14px;color:var(--mu)}.steps div:last-child{border-right:0}
+.steps em{color:var(--tx);font-style:normal;font-weight:700;font-family:"Bitter",Georgia,serif}li{margin-bottom:6px;color:var(--mu)}
+.hide{display:none}.note{font-size:12px;color:var(--mu)}
+@media(max-width:600px){header{padding:14px 16px 0}main{padding:20px 14px}}
+</style>
+</head><body>
+<header><div class="logo">WebIntel <b>AI</b></div>
+<nav><button class="on" data-t="dash">Dashboard</button><button data-t="proj">Projects</button><button data-t="res">Results</button><button data-t="about">About</button></nav></header>
+<main>
+<div id="offline" class="card hide" style="border:1px solid var(--red)">Backend not reachable. Start it with <b>python -m uvicorn main:app --reload</b> and open <b>http://127.0.0.1:8000</b> (the backend must be running for this page to work).</div>
+<section id="dash"><h2>Dashboard</h2><p class="s">Here’s a quick look at everything you’ve collected so far.</p>
+<div class="grid" id="stats"></div>
+<div class="card" style="margin-top:16px"><h3>Recent jobs</h3><div class="wrap"><table id="jobs"></table></div></div></section>
+
+<section id="proj" class="hide"><h2>Projects</h2><p class="s">Step 1 - Copy Paste the source and the fields to extract.</p>
+<div class="card"><label>Project name</label><input type="text" id="name" placeholder="e.g. Python docs scan">
+<label>Website URL (public pages only)</label><input type="text" id="url" placeholder="https://example.com">
+<div><label class="ck"><input type="checkbox" value="title" checked> Title</label><label class="ck"><input type="checkbox" value="headings" checked> Headings</label><label class="ck"><input type="checkbox" value="paragraphs" checked> Paragraphs</label><label class="ck"><input type="checkbox" value="links"> Links</label><label class="ck"><input type="checkbox" value="meta"> Metadata</label></div>
+<label>Custom CSS selector (optional)</label><input type="text" id="css" placeholder="e.g. div.price">
+<button class="btn" onclick="create()">Create project</button> <button class="btn alt" onclick="useSample()">Use built-in sample page</button> <span id="msg"></span></div>
+<div class="card"><h3>Your projects</h3><div class="wrap"><table id="plist"></table></div></div></section>
+
+<section id="res" class="hide"><h2>Results</h2><p class="s">Here’s what we found on the page, tidied up and ready for you to download.</p><div id="rbody" class="card">Nothing here yet. Run a project and your results will show up here.</div></section>
+
+<section id="about" class="hide"><h2>About WebIntel AI</h2><p class="s">AI-Powered Web Scraper &amp; Intelligent Data Analytics Platform - Department of CSE, IET Lucknow, 2026-27</p>
+<div class="card"><h3>Problem</h3><p class="s" style="margin:0">Useful information is spread across many sites. Manual collection is slow and inconsistent, and basic scrapers collect text without explaining it. WebIntel AI joins extraction, cleaning, AI analysis, history and export in one workspace.</p></div>
+<div class="card"><h3>Workflow</h3><div class="steps"><div><em>01 Configure</em><br>Enter URL, choose fields</div><div><em>02 Validate &amp; fetch</em><br>SSRF check, robots.txt, timeouts</div><div><em>03 Parse &amp; clean</em><br>Extract, normalise, deduplicate</div><div><em>04 AI analysis</em><br>Summary, keywords, category</div><div><em>05 Save &amp; export</em><br>History, CSV / JSON</div></div></div>
+<div class="grid"><div class="card"><h3>Technology</h3><ul><li>Frontend: HTML, CSS, JavaScript</li><li>Backend: Python, FastAPI</li><li>Scraping: Requests, BeautifulSoup</li><li>Data: SQLite, Pandas</li></ul></div>
+<div class="card"><h3>Security &amp; responsible scraping</h3><ul><li>SSRF protection, redirects re-checked</li><li>robots.txt respected</li><li>Timeouts and size limits</li><li>No bypassing logins, CAPTCHAs or paywalls</li></ul></div>
+<div class="card"><h3>Roadmap</h3><ul><li>Done: foundation, scraping, analysis, history, export</li><li>Next: Anakin AI API, scheduling, change detection, analytics charts</li></ul></div></div>
+<div class="card"><h3>Team</h3>Ozaier Ahmad - Pankaj Chaudhary - Radhika Mittal</div></section>
+</main>
+<script>
+const B=location.protocol==='file:'?'http://127.0.0.1:8000':'',$=id=>document.getElementById(id),api=(u,o)=>fetch(B+u,o).then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.detail||'Request failed');return d});
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function show(t){document.querySelectorAll('main section').forEach(s=>s.classList.toggle('hide',s.id!==t));document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));if(t==='dash')loadDash();if(t==='proj')loadProj()}
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>show(b.dataset.t));
+async function loadDash(){const j=await api('/api/jobs'),p=await api('/api/projects'),ok=j.filter(x=>x.status==='done');
+$('stats').innerHTML=[[p.length,'Projects'],[j.length,'Total jobs'],[ok.length?Math.round(ok.length/j.length*100)+'%':'-','Success rate'],[ok.reduce((a,x)=>a+x.count,0),'Records extracted']].map(([v,l])=>`<div class="card stat"><b>${v}</b><span>${l}</span></div>`).join('');
+$('jobs').innerHTML='<tr><th>#</th><th>Project</th><th>Status</th><th>Records</th><th>Time</th><th></th></tr>'+j.map(x=>`<tr><td>${x.id}</td><td>${esc(x.name)}</td><td class="${x.status==='done'?'ok':'bad'}">${x.status}${x.error?' - '+esc(x.error):''}</td><td>${x.count}</td><td>${(x.secs||0).toFixed(1)}s</td><td><button class="btn alt" onclick="view(${x.id})">View</button></td></tr>`).join('')}
+async function loadProj(){const p=await api('/api/projects');$('plist').innerHTML='<tr><th>Name</th><th>URL</th><th>Fields</th><th>Runs</th><th></th></tr>'+p.map(x=>`<tr><td>${esc(x.name)}</td><td>${esc(x.url)}</td><td>${JSON.parse(x.fields).map(f=>`<span class="tag">${esc(f)}</span>`).join('')}</td><td>${x.runs}</td><td><button class="btn" onclick="runp(${x.id},this)">Run</button></td></tr>`).join('')}
+async function create(){const f=[...document.querySelectorAll('#proj input[type=checkbox]:checked')].map(c=>c.value);if($('css').value.trim())f.push('css:'+$('css').value.trim());
+try{await api('/api/projects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:$('name').value||'Untitled',url:$('url').value.trim(),fields:f})});$('msg').textContent='Created.';loadProj()}catch(e){$('msg').textContent=e.message}}
+async function runp(id,b){b.textContent='Running...';b.disabled=true;try{const r=await api(`/api/projects/${id}/run`,{method:'POST'});view(r.job_id)}finally{b.disabled=false;b.textContent='Run'}}
+async function view(id){const d=await api('/api/jobs/'+id);show('res');const j=d.job,a=d.analysis;
+$('rbody').innerHTML=`<h3>Job #${j.id} - <span class="${j.status==='done'?'ok':'bad'}">${j.status}</span> - ${j.count} records - ${(j.secs||0).toFixed(1)}s</h3>`+(j.error?`<p class="bad">${esc(j.error)}</p>`:'')+
+(a?`<div class="card" style="background:var(--bg2)"><h3>What this page is about</h3><p>${esc(a.summary)}</p><p>Category: <b class="ok">${esc(a.category)}</b></p>${JSON.parse(a.keywords).map(k=>`<span class="tag">${esc(k)}</span>`).join('')}</div>`:'')+
+(j.status==='done'?`<a class="btn" href="${B}/api/jobs/${id}/export?fmt=csv">Export CSV</a> <a class="btn alt" href="${B}/api/jobs/${id}/export?fmt=json">Export JSON</a><div class="wrap" style="margin-top:12px"><table><tr><th>Field</th><th>Value</th></tr>${d.records.map(r=>`<tr><td><span class="tag">${esc(r.field)}</span></td><td>${esc(r.value)}</td></tr>`).join('')}</table></div>`:'')}
+function useSample(){$('url').value='sample';$('msg').textContent='Sample selected - click Create project.'}
+api('/api/projects').catch(()=>$('offline').classList.remove('hide'));
+loadDash();
+</script></body></html>
+'''
