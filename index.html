@@ -1,0 +1,148 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WebIntel AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Bitter:wght@600;700&family=IBM+Plex+Mono&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f5f1e8;--bg2:#ece6d8;--card:#fffdf8;--teal:#2f5d50;--cy:#7a4a2b;--tx:#211f1b;--mu:#6d665a;--red:#b0432a;--line:#d8d0bf}
+*{box-sizing:border-box}body{margin:0;font-family:"Source Sans 3","Segoe UI",system-ui,sans-serif;font-size:16px;background:var(--bg);color:var(--tx);line-height:1.5}
+header{display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;padding:18px 32px 0;border-bottom:2px solid var(--tx);background:var(--bg)}
+.logo{font-family:"Bitter","Bitter",Georgia,serif;font-weight:700;font-size:26px;letter-spacing:-.5px;padding-bottom:10px}.logo b{color:var(--teal);font-style:italic}
+nav{display:flex;gap:2px;margin-left:auto;flex-wrap:wrap}
+nav button{background:none;border:0;border-bottom:3px solid transparent;color:var(--mu);padding:10px 14px;cursor:pointer;font-size:14px;font-family:inherit;margin-bottom:-2px}
+nav button:hover{color:var(--tx)}nav button.on{color:var(--tx);border-bottom-color:var(--teal);font-weight:600}
+main{max-width:1000px;margin:0 auto;padding:32px 24px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:22px;margin-bottom:18px}
+h2{margin:0 0 6px;font-family:"Bitter","Bitter",Georgia,serif;font-size:32px;font-weight:700;letter-spacing:-.5px}
+h3{margin:0 0 12px;font-family:"Bitter","Bitter",Georgia,serif;font-size:18px;color:var(--tx);border-bottom:1px solid var(--line);padding-bottom:8px}
+p.s{color:var(--mu);margin:0 0 22px;f
+    ont-size:15px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px}
+.stat{border-top:3px solid var(--teal)}.stat b{display:block;font-family:"Bitter","Bitter",Georgia,serif;font-size:38px;font-weight:700;color:var(--tx)}.stat span{color:var(--mu);font-size:12px;text-transform:uppercase;letter-spacing:.08em}
+label{font-size:13px;font-weight:600;color:var(--tx)}
+input[type=text],textarea,select{width:100%;padding:10px 12px;margin:5px 0 14px;border-radius:3px;border:1px solid #bdb4a1;background:#fff;color:var(--tx);font:inherit}
+input:focus,textarea:focus,select:focus{outline:2px solid var(--teal);outline-offset:-1px}
+textarea{min-height:90px;font-family:"IBM Plex Mono",Consolas,monospace;font-size:12px}
+label.ck{display:inline-block;margin:0 16px 8px 0;color:var(--tx);font-size:14px;font-weight:400}
+.btn{background:var(--teal);color:#fff;border:1px solid var(--teal);padding:9px 18px;border-radius:3px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block;font-size:14px;font-family:inherit}
+.btn:hover{background:#244a40}.btn.alt{background:transparent;color:var(--tx);border-color:#9c937f}.btn.alt:hover{background:var(--bg2)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--mu);font-weight:600}
+td,th{padding:9px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;word-break:break-word}
+.tag{display:inline-block;border:1px solid #b9ae98;color:var(--cy);border-radius:2px;padding:1px 7px;margin:2px;font-size:12px;font-family:"IBM Plex Mono",Consolas,monospace;background:#fff}
+.ok{color:var(--teal);font-weight:600}.bad{color:var(--red);font-weight:600}.wrap{overflow-x:auto;max-height:340px}
+.steps{display:flex;gap:0;flex-wrap:wrap;border:1px solid var(--line)}.steps div{flex:1;min-width:150px;padding:14px;border-right:1px solid var(--line);font-size:14px;color:var(--mu)}.steps div:last-child{border-right:0}
+.steps em{color:var(--tx);font-style:normal;font-weight:700;font-family:"Bitter",Georgia,serif}li{margin-bottom:6px;color:var(--mu)}
+.hide{display:none}.note{font-size:12px;color:var(--mu)}
+@media(max-width:600px){header{padding:14px 16px 0}main{padding:20px 14px}}
+</style>
+</head><body>
+<header><div class="logo">WebIntel <b>AI</b></div>
+<nav><button class="on" data-t="dash">Dashboard</button><button data-t="proj">New Scrape</button><button data-t="res">Results</button><button data-t="about">About</button></nav></header>
+<main>
+
+<section id="dash"><h2>Dashboard</h2><p class="s">Here’s a quick look at everything you’ve collected so far.</p>
+<div class="grid" id="stats"></div>
+<div class="card" style="margin-top:16px"><h3>Job history</h3><div class="wrap"><table id="jobs"></table></div></div></section>
+
+<section id="proj" class="hide"><h2>New Scrape</h2><p class="s">Step 1 - Copy Paste the source and the fields to extract.</p>
+<div class="card">
+<label>Project name</label><input type="text" id="name" placeholder="e.g. Course page scan">
+<label>Source</label>
+<select id="mode" onchange="modeChg()"><option value="sample">Built-in sample page (works offline)</option><option value="paste">Paste page HTML</option><option value="url">Fetch from URL (via public CORS proxy)</option></select>
+<div id="urlBox" class="hide"><input type="text" id="url" placeholder="https://example.com"></div>
+<div id="pasteBox" class="hide"><textarea id="html" placeholder="Paste page source here (View Source -> copy)"></textarea></div>
+<div><label class="ck"><input type="checkbox" value="title" checked> Title</label><label class="ck"><input type="checkbox" value="headings" checked> Headings</label><label class="ck"><input type="checkbox" value="paragraphs" checked> Paragraphs</label><label class="ck"><input type="checkbox" value="links"> Links</label><label class="ck"><input type="checkbox" value="meta"> Metadata</label></div>
+<label>Custom CSS selector (optional)</label><input type="text" id="css" placeholder="e.g. .price">
+<button class="btn" onclick="runJob()">Run scrape</button> <span id="msg" class="note"></span>
+<p class="note">Browsers block direct cross-site requests, so URL mode uses a third-party proxy and may fail on some sites. The full Python (FastAPI) version fetches directly with SSRF protection and robots.txt checks. Only scrape pages you are permitted to.</p>
+</div></section>
+
+<section id="res" class="hide"><h2>Results</h2><p class="s">Here’s what we found on the page, tidied up and ready for you to download.</p><div id="rbody" class="card">Nothing here yet. Run a scrape and your results will show up here.</div></section>
+
+<section id="about" class="hide"><h2>About WebIntel AI</h2><p class="s">AI-Powered Web Scraper &amp; Intelligent Data Analytics Platform - Department of CSE, IET Lucknow, 2026-27</p>
+<div class="card"><h3>Problem</h3><p class="s" style="margin:0">Useful information is spread across many sites. Manual collection is slow and inconsistent, and basic scrapers collect text without explaining it. WebIntel AI joins extraction, cleaning, AI analysis, history and export in one workspace.</p></div>
+<div class="card"><h3>Workflow</h3><div class="steps"><div><em>01 Configure</em><br>Enter source, choose fields</div><div><em>02 Validate &amp; fetch</em><br>URL checks, timeouts</div><div><em>03 Parse &amp; clean</em><br>Extract, normalise, deduplicate</div><div><em>04 AI analysis</em><br>Summary, keywords, category</div><div><em>05 Save &amp; export</em><br>History, CSV / JSON</div></div></div>
+<div class="grid"><div class="card"><h3>Technology</h3><ul><li>Frontend: HTML, CSS, JavaScript</li><li>Backend (full version): Python, FastAPI</li><li>Scraping: Requests, BeautifulSoup</li><li>Data: SQLite, Pandas</li></ul></div>
+<div class="card"><h3>Security &amp; responsible scraping</h3><ul><li>SSRF protection (backend version)</li><li>robots.txt respected (backend version)</li><li>Treat scraped content as untrusted</li><li>No bypassing logins, CAPTCHAs or paywalls</li></ul></div>
+<div class="card"><h3>Roadmap</h3><ul><li>Done: scraping, cleaning, analysis, history, export</li><li>Next: Anakin AI API, scheduling, change detection, charts</li></ul></div></div>
+<div class="card"><h3>Team</h3>Ozaier Ahmad - Pankaj Chaudhary - Radhika Mittal</div></section>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let jobs=[];try{jobs=JSON.parse(localStorage.getItem('webintel_jobs')||'[]')}catch(e){}
+const save=()=>{try{localStorage.setItem('webintel_jobs',JSON.stringify(jobs))}catch(e){}};
+
+const SAMPLE=`<html><head><title>Intro to Cloud Computing - Course Page</title><meta name="description" content="A beginner course on cloud computing and data systems"></head><body>
+<h1>Introduction to Cloud Computing</h1><h2>Course overview</h2>
+<p>This course introduces students to cloud computing, covering software services, data storage, and web application deployment on modern cloud platforms.</p>
+<p>Students learn how a distributed system handles data at scale, and how an API connects cloud services to every web application.</p>
+<h2>Syllabus</h2><p>Topics include virtual machines, containers, cloud databases, security, and cost management for software teams.</p>
+<p>Students learn how a distributed system handles data at scale, and how an API connects cloud services to every web application.</p>
+<h2>Resources</h2><a href="/docs/week1">Week 1 notes</a><a href="/docs/week2">Week 2 notes</a><a href="https://example.org/lab">Lab guide</a><p class="price">Fee: Rs. 4,999</p></body></html>`;
+
+function show(t){document.querySelectorAll('main section').forEach(s=>s.classList.toggle('hide',s.id!==t));document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));if(t==='dash')dash()}
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>show(b.dataset.t));
+function modeChg(){const m=$('mode').value;$('urlBox').classList.toggle('hide',m!=='url');$('pasteBox').classList.toggle('hide',m!=='paste')}
+
+// Stage 2: validate & fetch
+function checkUrl(u){let p;try{p=new URL(u)}catch(e){throw Error('Invalid URL')}
+ if(!/^https?:$/.test(p.protocol))throw Error('Only http/https URLs are allowed');
+ if(/^(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|0\.|\[?::1)/i.test(p.hostname))throw Error('Blocked: private or local address');return p.href}
+async function getHtml(){const m=$('mode').value;
+ if(m==='sample')return{html:SAMPLE,base:'https://sample.local/'};
+ if(m==='paste'){if(!$('html').value.trim())throw Error('Paste some HTML first');return{html:$('html').value,base:'https://pasted.local/'}}
+ const u=checkUrl($('url').value.trim()),ctl=new AbortController(),t=setTimeout(()=>ctl.abort(),12000);
+ try{const r=await fetch('/proxy?url='+encodeURIComponent(u),{signal:ctl.signal});if(!r.ok)throw Error('Fetch failed ('+r.status+')');return{html:(await r.text()).slice(0,2000000),base:u}}
+ catch(e){throw Error(e.name==='AbortError'?'Request timed out':'Could not fetch via proxy. Try paste mode. ('+e.message+')')}finally{clearTimeout(t)}}
+
+// Stage 3: parse & clean
+function extract(html,base,fields){const d=new DOMParser().parseFromString(html,'text/html'),out=[],add=(f,a)=>a.forEach(x=>out.push([f,x]));
+ const txt=e=>e.textContent;
+ for(const f of fields){
+  if(f==='title'&&d.title)add(f,[d.title]);
+  else if(f==='headings')add(f,[...d.querySelectorAll('h1,h2,h3')].map(txt));
+  else if(f==='paragraphs')add(f,[...d.querySelectorAll('p')].map(txt));
+  else if(f==='links')add(f,[...d.querySelectorAll('a[href]')].map(a=>{try{return new URL(a.getAttribute('href'),base).href}catch(e){return''}}));
+  else if(f==='meta')add(f,[...d.querySelectorAll('meta[content]')].filter(m=>m.name||m.getAttribute('property')).map(m=>(m.name||m.getAttribute('property'))+': '+m.content));
+  else if(f.startsWith('css:'))add(f,[...d.querySelectorAll(f.slice(4))].map(txt));}
+ const seen=new Set();return out.map(([f,v])=>({field:f,value:v.replace(/\s+/g,' ').trim()})).filter(r=>{const k=r.field+'|'+r.value;if(r.value.length<2||seen.has(k))return false;seen.add(k);return true})}
+
+// Stage 4: local analysis (swap for Anakin AI API call once verified)
+const STOP=new Set('the and for are was with that this from your you our not have has will can they their about more also been were which into than then'.split());
+const CATS={Technology:'software data code system web api cloud',Business:'market price company customer sales product',Education:'course course student learn university research study',News:'said report government people year news'};
+function analyse(texts){const t=texts.join(' ').slice(0,20000),words=(t.toLowerCase().match(/[a-z]{4,}/g)||[]).filter(w=>!STOP.has(w)),f={};
+ words.forEach(w=>f[w]=(f[w]||0)+1);
+ const kw=Object.keys(f).sort((a,b)=>f[b]-f[a]).slice(0,8),sents=(t.match(/[^.!?]+[.!?]/g)||[]).map(s=>s.trim()).filter(s=>s.length>40&&s.length<300);
+ const sc=s=>((s.toLowerCase().match(/[a-z]{4,}/g)||[]).reduce((a,w)=>a+(f[w]||0),0))/Math.sqrt(s.length);
+ const summary=sents.sort((a,b)=>sc(b)-sc(a)).slice(0,3).join(' ')||'Not enough text to summarise.';
+ let cat='Unknown',best=0;for(const k in CATS){const s=CATS[k].split(' ').reduce((a,w)=>a+(f[w]||0),0);if(s>best){best=s;cat=k}}
+ return{summary,keywords:kw,category:cat}}
+
+async function runJob(){const t0=performance.now(),fields=[...document.querySelectorAll('#proj input[type=checkbox]:checked')].map(c=>c.value);
+ if($('css').value.trim())fields.push('css:'+$('css').value.trim());
+ const job={id:(jobs[0]?.id||0)+1,name:$('name').value||'Untitled',mode:$('mode').value,fields,at:new Date().toLocaleString()};
+ $('msg').textContent='Running...';
+ try{const{html,base}=await getHtml();job.records=extract(html,base,fields);
+  const main=job.records.filter(r=>['paragraphs','headings'].includes(r.field)).map(r=>r.value);
+  job.analysis=analyse(main.length?main:job.records.map(r=>r.value));job.status='done'}
+ catch(e){job.status='failed';job.error=e.message;job.records=[]}
+ job.secs=(performance.now()-t0)/1000;jobs.unshift(job);save();$('msg').textContent='';view(job.id)}
+
+function view(id){const j=jobs.find(x=>x.id===id);show('res');const a=j.analysis;
+ $('rbody').innerHTML=`<h3>Job #${j.id} - ${esc(j.name)} - <span class="${j.status==='done'?'ok':'bad'}">${j.status}</span> - ${j.records.length} records - ${j.secs.toFixed(2)}s</h3>`+(j.error?`<p class="bad">${esc(j.error)}</p>`:'')+
+ (a?`<div class="card" style="background:var(--bg2)"><h3>What this page is about</h3><p>${esc(a.summary)}</p><p>Category: <b class="ok">${esc(a.category)}</b></p>${a.keywords.map(k=>`<span class="tag">${esc(k)}</span>`).join('')}</div>`:'')+
+ (j.status==='done'?`<button class="btn" onclick="dl(${id},'csv')">Export CSV</button> <button class="btn alt" onclick="dl(${id},'json')">Export JSON</button><div class="wrap" style="margin-top:12px"><table><tr><th>Field</th><th>Value</th></tr>${j.records.slice(0,500).map(r=>`<tr><td><span class="tag">${esc(r.field)}</span></td><td>${esc(r.value)}</td></tr>`).join('')}</table></div>`:'')}
+
+function dl(id,fmt){const j=jobs.find(x=>x.id===id);let body,type;
+ if(fmt==='json'){body=JSON.stringify(j.records,null,2);type='application/json'}
+ else{body='field,value\n'+j.records.map(r=>`${r.field},"${r.value.replace(/"/g,'""')}"`).join('\n');type='text/csv'}
+ const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([body],{type}));a.download=`webintel_job${id}.${fmt}`;a.click()}
+
+function dash(){const ok=jobs.filter(x=>x.status==='done');
+ $('stats').innerHTML=[[jobs.length,'Total jobs'],[jobs.length?Math.round(ok.length/jobs.length*100)+'%':'-','Success rate'],[ok.reduce((a,x)=>a+x.records.length,0),'Records extracted'],[ok.length?(ok.reduce((a,x)=>a+x.secs,0)/ok.length).toFixed(2)+'s':'-','Avg duration']].map(([v,l])=>`<div class="card stat"><b>${v}</b><span>${l}</span></div>`).join('');
+ $('jobs').innerHTML='<tr><th>#</th><th>Name</th><th>Source</th><th>Status</th><th>Records</th><th>When</th><th></th></tr>'+(jobs.length?jobs.map(x=>`<tr><td>${x.id}</td><td>${esc(x.name)}</td><td>${x.mode}</td><td class="${x.status==='done'?'ok':'bad'}">${x.status}</td><td>${x.records.length}</td><td>${esc(x.at)}</td><td><button class="btn alt" onclick="view(${x.id})">View</button></td></tr>`).join(''):'<tr><td colspan="7" class="note">No jobs yet. Open "New Scrape" and run one.</td></tr>')}
+dash();
+</script></body></html>
+
+
